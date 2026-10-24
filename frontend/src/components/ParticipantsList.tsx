@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { ParticipantInfo, Role } from '../types';
-import { Crown, Shield, User, MoreVertical, UserMinus, ShieldAlert, Award, Sparkles } from 'lucide-react';
+import { Crown, Shield, User, MoreVertical, UserMinus, Sparkles } from 'lucide-react';
 
 interface ParticipantsListProps {
   participants: ParticipantInfo[];
@@ -10,6 +10,22 @@ interface ParticipantsListProps {
   onRemoveParticipant: (userId: string) => void;
   onTransferHost: (userId: string) => void;
 }
+
+const getAvatarGradient = (name: string) => {
+  const gradients = [
+    'linear-gradient(135deg, #8b5cf6, #3b82f6)',
+    'linear-gradient(135deg, #ec4899, #8b5cf6)',
+    'linear-gradient(135deg, #06b6d4, #10b981)',
+    'linear-gradient(135deg, #f59e0b, #ef4444)',
+    'linear-gradient(135deg, #6366f1, #a855f7)',
+    'linear-gradient(135deg, #14b8a6, #06b6d4)'
+  ];
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return gradients[Math.abs(hash) % gradients.length];
+};
 
 export const ParticipantsList: React.FC<ParticipantsListProps> = ({
   participants,
@@ -26,19 +42,19 @@ export const ParticipantsList: React.FC<ParticipantsListProps> = ({
       case 'host':
         return (
           <span className="role-tag role-tag-host">
-            <Crown className="w-3 h-3 mr-1 text-amber-400" /> Host
+            <Crown className="w-3 h-3 mr-1 text-amber-300" /> Host
           </span>
         );
       case 'moderator':
         return (
           <span className="role-tag role-tag-mod">
-            <Shield className="w-3 h-3 mr-1 text-cyan-400" /> Moderator
+            <Shield className="w-3 h-3 mr-1 text-cyan-300" /> Moderator
           </span>
         );
       default:
         return (
           <span className="role-tag role-tag-participant">
-            <User className="w-3 h-3 mr-1 text-slate-400" /> Participant
+            <User className="w-3 h-3 mr-1 text-slate-400" /> Viewer
           </span>
         );
     }
@@ -47,8 +63,11 @@ export const ParticipantsList: React.FC<ParticipantsListProps> = ({
   return (
     <div className="participants-container">
       <div className="participants-header">
-        <span className="section-title">In the Room</span>
-        <span className="count-badge">{participants.length}</span>
+        <div className="flex items-center gap-2">
+          <span className="section-title">Party Members</span>
+          <span className="count-badge">{participants.length}</span>
+        </div>
+        <span className="text-xs text-slate-400">All in sync</span>
       </div>
 
       <div className="participants-list">
@@ -60,9 +79,16 @@ export const ParticipantsList: React.FC<ParticipantsListProps> = ({
           return (
             <div key={p.userId} className={`participant-card ${isMe ? 'participant-me' : ''}`}>
               <div className="participant-info">
-                <div className="avatar-circle">
-                  {p.username.charAt(0).toUpperCase()}
+                <div className="avatar-wrapper">
+                  <div
+                    className="avatar-circle"
+                    style={{ background: getAvatarGradient(p.username) }}
+                  >
+                    {p.username.charAt(0).toUpperCase()}
+                  </div>
+                  <span className="online-indicator-dot" />
                 </div>
+
                 <div className="participant-details">
                   <div className="name-row">
                     <span className="participant-name">{p.username}</span>
@@ -78,7 +104,7 @@ export const ParticipantsList: React.FC<ParticipantsListProps> = ({
                   <button
                     className="btn-action-trigger"
                     onClick={() => setActiveMenuUserId(isMenuOpen ? null : p.userId)}
-                    title="Manage participant"
+                    title="Manage participant privileges"
                   >
                     <MoreVertical className="w-4 h-4 text-slate-400" />
                   </button>
@@ -93,7 +119,7 @@ export const ParticipantsList: React.FC<ParticipantsListProps> = ({
                             setActiveMenuUserId(null);
                           }}
                         >
-                          <Shield className="w-3.5 h-3.5 text-cyan-400 mr-2" /> Make Moderator
+                          <Shield className="w-3.5 h-3.5 text-cyan-400 mr-2" /> Promote to Moderator
                         </button>
                       ) : (
                         <button
@@ -103,7 +129,7 @@ export const ParticipantsList: React.FC<ParticipantsListProps> = ({
                             setActiveMenuUserId(null);
                           }}
                         >
-                          <User className="w-3.5 h-3.5 text-slate-400 mr-2" /> Demote to Participant
+                          <User className="w-3.5 h-3.5 text-slate-400 mr-2" /> Demote to Viewer
                         </button>
                       )}
 
@@ -130,7 +156,7 @@ export const ParticipantsList: React.FC<ParticipantsListProps> = ({
                           }
                         }}
                       >
-                        <UserMinus className="w-3.5 h-3.5 mr-2" /> Remove from Room
+                        <UserMinus className="w-3.5 h-3.5 mr-2" /> Kick from Room
                       </button>
                     </div>
                   )}

@@ -41,6 +41,48 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// Authentication Endpoints
+app.post('/api/auth/register', (req, res) => {
+  const { username, password } = req.body || {};
+  const result = db.registerUser(username, password);
+  if (!result.success) {
+    return res.status(400).json({ error: result.error });
+  }
+  res.status(201).json(result);
+});
+
+app.post('/api/auth/login', (req, res) => {
+  const { username, password } = req.body || {};
+  const result = db.loginUser(username, password);
+  if (!result.success) {
+    return res.status(401).json({ error: result.error });
+  }
+  res.json(result);
+});
+
+app.get('/api/auth/me', (req, res) => {
+  const authHeader = req.headers.authorization;
+  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : (req.query.token as string);
+  if (!token) {
+    return res.status(401).json({ error: 'No token provided' });
+  }
+  const user = db.getUserByToken(token);
+  if (!user) {
+    return res.status(401).json({ error: 'Session expired or invalid' });
+  }
+  res.json({ user, token });
+});
+
+app.post('/api/auth/logout', (req, res) => {
+  const authHeader = req.headers.authorization;
+  const token = req.body?.token || (authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined);
+  if (token) {
+    db.deleteSession(token);
+  }
+  res.json({ success: true, message: 'Logged out successfully' });
+});
+
+// Rooms & Storage Endpoints
 app.get('/api/rooms', (req, res) => {
   const rooms = db.getAllRooms();
   res.json({ rooms });
@@ -59,6 +101,15 @@ app.get('/api/rooms/:roomId', (req, res) => {
     currentTime: room.calculateCurrentTime(),
     participantsCount: room.participants.size
   });
+});
+
+app.get('/api/storage-info', (req, res) => {
+  try {
+    const stats = db.getStorageStats();
+    res.json(stats);
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to retrieve storage stats', details: err?.message });
+  }
 });
 
 // Setup WebSocket event handlers

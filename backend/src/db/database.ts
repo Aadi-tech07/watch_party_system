@@ -1,6 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import path from 'path';
 import fs from 'fs';
+import crypto from 'node:crypto';
 
 const DB_PATH = process.env.DB_PATH || path.resolve(process.cwd(), 'watchparty.sqlite');
 
@@ -66,6 +67,22 @@ export class DatabaseService {
         added_by TEXT NOT NULL,
         created_at INTEGER NOT NULL,
         FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS users (
+        id TEXT PRIMARY KEY,
+        username TEXT UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL,
+        avatar_color TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS sessions (
+        token TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        username TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       );
     `);
   }
@@ -208,5 +225,137 @@ export class DatabaseService {
   public removePlaylistItem(id: string): void {
     const stmt = this.db.prepare(`DELETE FROM playlist WHERE id = ?`);
     stmt.run(id);
+  }
+
+  // --- User Authentication & Sessions ---
+  private hashPassword(password: string): string {
+    return crypto.createHash('sha256').update(password + '_watchparty_salt').digest('hex');
+  }
+
+  public registerUser(username: string, password: string): { success: boolean; token?: string; user?: any; error?: string } {
+    const cleanUsername = (username || '').trim();
+    if (!cleanUsername || cleanUsername.length < 2) {
+      return { success: false, error: 'Username must be at least 2 characters long.' };
+    }
+    if (!password || password.length < 4) {
+      return { success: false, error: 'Password must be at least 4 characters long.' };
+    }
+
+    // Check if user already exists
+    const existing = this.db.prepare(`SELECT * FROM users WHERE LOWER(username) = LOWER(?)`).get(cleanUsername);
+    if (existing) {
+      return { success: false, error: 'Username is already taken. Please choose another or log in.' };
+    }
+
+    const userId = 'usr_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
+    const passwordHash = this.hashPassword(password);
+    const colors = ['#6366f1', '#ec4899', '#8b5cf6', '#10b981', '#f59e0b', '#3b82f6', '#06b6d4', '#e11d48'];
+    const avatarColor = colors[Math.floor(Math.random() * colors.length)];
+    const now = Date.now();
+
+    this.db.prepare(`
+      INSERT INTO users (id, username, password_hash, avatar_color, created_at)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(userId, cleanUsername, passwordHash, avatarColor, now);
+
+    // Create session token
+    const token = 'tok_' + crypto.randomBytes(24).toString('hex');
+    this.db.prepare(`
+      INSERT INTO sessions (token, user_id, username, created_at)
+      VALUES (?, ?, ?, ?)
+    `).run(token, userId, cleanUsername, now);
+
+    return {
+      success: true,
+      token,
+      user: { id: userId, username: cleanUsername, avatarColor, createdAt: now }
+    };
+  }
+
+  public loginUser(username: string, password: string): { success: boolean; token?: string; user?: any; error?: string } {
+    const cleanUsername = (username || '').trim();
+    if (!cleanUsername || !password) {
+      return { success: false, error: 'Username and password are required.' };
+    }
+
+    const user: any = this.db.prepare(`SELECT * FROM users WHERE LOWER(username) = LOWER(?)`).get(cleanUsername);
+    if (!user) {
+      return { success: false, error: 'Invalid username or password.' };
+    }
+
+    const passwordHash = this.hashPassword(password);
+    if (user.password_hash !== passwordHash) {
+      return { success: false, error: 'Invalid username or password.' };
+    }
+
+    const token = 'tok_' + crypto.randomBytes(24).toString('hex');
+    const now = Date.now();
+    this.db.prepare(`
+      INSERT INTO sessions (token, user_id, username, created_at)
+      VALUES (?, ?, ?, ?)
+    `).run(token, user.id, user.username, now);
+
+    return {
+      success: true,
+      token,
+      user: { id: user.id, username: user.username, avatarColor: user.avatar_color, createdAt: user.created_at }
+    };
+  }
+
+  public getUserByToken(token: string): any | null {
+    if (!token) return null;
+    const session: any = this.db.prepare(`SELECT * FROM sessions WHERE token = ?`).get(token);
+    if (!session) return null;
+
+    const user: any = this.db.prepare(`SELECT id, username, avatar_color, created_at FROM users WHERE id = ?`).get(session.user_id);
+    if (!user) return null;
+
+    return {
+      id: user.id,
+      username: user.username,
+      avatarColor: user.avatar_color,
+      createdAt: user.created_at
+    };
+  }
+
+  public deleteSession(token: string): void {
+    if (token) {
+      this.db.prepare(`DELETE FROM sessions WHERE token = ?`).run(token);
+    }
+  }
+
+  // --- SQLite Storage Statistics ---
+  public getStorageStats(): any {
+    let fileSizeBytes = 0;
+    try {
+      if (fs.existsSync(DB_PATH)) {
+        fileSizeBytes = fs.statSync(DB_PATH).size;
+      }
+    } catch (e) {
+      // Ignore
+    }
+
+    const getCount = (table: string): number => {
+      try {
+        const row: any = this.db.prepare(`SELECT COUNT(*) as count FROM ${table}`).get();
+        return row?.count || 0;
+      } catch {
+        return 0;
+      }
+    };
+
+    const tables: any[] = this.db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'`).all() as any[];
+
+    return {
+      dbPath: DB_PATH,
+      fileSizeBytes,
+      roomsCount: getCount('rooms'),
+      participantsCount: getCount('participants'),
+      messagesCount: getCount('chat_messages'),
+      playlistCount: getCount('playlist'),
+      usersCount: getCount('users'),
+      sessionsCount: getCount('sessions'),
+      tables: tables.map(t => t.name)
+    };
   }
 }

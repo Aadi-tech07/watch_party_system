@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { PlaylistItem } from '../types';
 import { extractYouTubeId } from '../utils/youtube';
-import { Plus, Play, Trash2, ListMusic, Video, Check } from 'lucide-react';
+import { Plus, Play, Trash2, ListMusic, Video, Radio, Sparkles } from 'lucide-react';
 
 interface VideoQueueProps {
   queue: PlaylistItem[];
@@ -40,19 +40,47 @@ export const VideoQueue: React.FC<VideoQueueProps> = ({
 
   return (
     <div className="queue-container">
+      {/* Header */}
       <div className="queue-header">
         <div className="queue-title-row">
           <ListMusic className="w-4 h-4 text-purple-400 mr-1.5" />
           <span className="section-title">Party Playlist Queue</span>
+          <span className="queue-count-tag">{queue.length}</span>
         </div>
         {canControl && queue.length > 0 && (
           <button className="btn-play-next" onClick={onPlayNext}>
-            <Play className="w-3.5 h-3.5 fill-current mr-1" /> Play Next
+            <Play className="w-3.5 h-3.5 fill-current mr-1" /> Skip to Next
           </button>
         )}
       </div>
 
-      {/* Add to Queue form */}
+      {/* Now Streaming Banner with animated sound wave */}
+      <div className="now-streaming-banner animate-fade-in">
+        <div className="banner-thumb-box">
+          <img
+            src={`https://img.youtube.com/vi/${currentVideoId}/mqdefault.jpg`}
+            alt="Current Video"
+            className="banner-thumb-img"
+            onError={(e) => {
+              (e.target as HTMLElement).style.display = 'none';
+            }}
+          />
+          <div className="live-soundwave">
+            <span className="bar bar-1" />
+            <span className="bar bar-2" />
+            <span className="bar bar-3" />
+          </div>
+        </div>
+        <div className="banner-info">
+          <div className="flex items-center gap-1.5 mb-1">
+            <span className="now-playing-tag">NOW PLAYING</span>
+            <Radio className="w-3 h-3 text-red-500 animate-pulse" />
+          </div>
+          <span className="banner-video-id">ID: {currentVideoId}</span>
+        </div>
+      </div>
+
+      {/* Add to Queue Form */}
       <form onSubmit={handleAdd} className="queue-add-form">
         <input
           type="text"
@@ -76,23 +104,30 @@ export const VideoQueue: React.FC<VideoQueueProps> = ({
         {errorMsg && <p className="queue-error-text">{errorMsg}</p>}
       </form>
 
-      {/* Current playing card */}
-      <div className="current-video-banner">
-        <div className="current-badge">NOW PLAYING</div>
-        <div className="video-id-text">Video ID: {currentVideoId}</div>
-      </div>
-
       {/* Queued items list */}
       <div className="queue-list">
         {queue.length === 0 ? (
           <div className="queue-empty-state">
-            <Video className="w-8 h-8 text-slate-500 mb-2" />
-            <p>Queue is empty. Add videos to play continuously!</p>
+            <div className="empty-icon-circle">
+              <Video className="w-6 h-6 text-purple-400" />
+            </div>
+            <h4>Queue is empty</h4>
+            <p>Queue up upcoming videos so the party keeps streaming without interruption!</p>
           </div>
         ) : (
           queue.map((item, index) => (
             <div key={item.id} className="queue-item-card animate-fade-in">
               <span className="queue-index">#{index + 1}</span>
+              <div className="queue-item-thumb">
+                <img
+                  src={`https://img.youtube.com/vi/${item.videoId}/default.jpg`}
+                  alt={item.title}
+                  className="queue-thumb-img"
+                  onError={(e) => {
+                    (e.target as HTMLElement).style.display = 'none';
+                  }}
+                />
+              </div>
               <div className="queue-item-info">
                 <span className="queue-item-title">{item.title}</span>
                 <span className="queue-item-meta">Added by {item.addedBy}</span>
@@ -101,7 +136,7 @@ export const VideoQueue: React.FC<VideoQueueProps> = ({
                 <button
                   className="btn-play-item"
                   onClick={() => onSelectVideo(item.videoId)}
-                  title="Play this video now"
+                  title="Play this video immediately"
                 >
                   <Play className="w-3.5 h-3.5 fill-current" />
                 </button>

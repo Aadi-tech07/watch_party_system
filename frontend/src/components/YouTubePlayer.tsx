@@ -1,5 +1,18 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { Play, Pause, Volume2, VolumeX, Maximize, RotateCcw, ShieldAlert, Sparkles, Lock } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import {
+  Play,
+  Pause,
+  Volume2,
+  VolumeX,
+  Maximize,
+  RotateCcw,
+  Sparkles,
+  Lock,
+  RotateCw,
+  Tv,
+  CheckCircle2,
+  Sliders
+} from 'lucide-react';
 import { formatTime } from '../utils/youtube';
 import { Role } from '../types';
 
@@ -20,6 +33,8 @@ interface YouTubePlayerProps {
   onPause: (currentTime: number) => void;
   onSeek: (time: number) => void;
   onRequestControl: () => void;
+  isTheaterMode?: boolean;
+  onToggleTheater?: () => void;
 }
 
 export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
@@ -31,7 +46,9 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
   onPlay,
   onPause,
   onSeek,
-  onRequestControl
+  onRequestControl,
+  isTheaterMode,
+  onToggleTheater
 }) => {
   const playerRef = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -82,7 +99,7 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
         videoId: videoId,
         playerVars: {
           autoplay: 1,
-          controls: 0, // We use custom controls to enforce RBAC perfectly
+          controls: 0, // Custom controls to enforce role-based access control
           disablekb: 1,
           modestbranding: 1,
           rel: 0,
@@ -96,7 +113,6 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
             setDuration(event.target.getDuration() || 0);
             event.target.setVolume(volume);
 
-            // Catch up to current room state
             if (currentTime > 0) {
               event.target.seekTo(currentTime, true);
             }
@@ -109,7 +125,6 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
           onStateChange: (event: any) => {
             if (isSyncingRef.current) return;
 
-            // Optional sync if controller interacts directly
             if (canControl) {
               if (event.data === window.YT.PlayerState.PLAYING && playState !== 'playing') {
                 onPlay(event.target.getCurrentTime());
@@ -201,7 +216,7 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
     return () => clearTimeout(timer);
   }, [playState, currentTime, isPlayerReady]);
 
-  // Periodic ticker for progress bar and drift tracking
+  // Periodic ticker for progress bar
   useEffect(() => {
     const interval = setInterval(() => {
       if (playerRef.current && isPlayerReady) {
@@ -214,7 +229,7 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
           // ignore
         }
       }
-    }, 400);
+    }, 350);
 
     return () => clearInterval(interval);
   }, [isPlayerReady, duration]);
@@ -232,6 +247,17 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
     } else {
       onPlay(localTime);
     }
+  };
+
+  const handleJump = (seconds: number) => {
+    if (!canControl) {
+      setShowControlHint(true);
+      setTimeout(() => setShowControlHint(false), 3000);
+      return;
+    }
+    const newTarget = Math.max(0, Math.min(duration, localTime + seconds));
+    setLocalTime(newTarget);
+    onSeek(newTarget);
   };
 
   const handleSeekChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -276,20 +302,25 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
     if (!containerRef.current) return;
     if (!document.fullscreenElement) {
       containerRef.current.requestFullscreen().catch((err) => {
-        console.error('Error attempting to enable fullscreen:', err.message);
+        console.error('Fullscreen request error:', err.message);
       });
     } else {
       document.exitFullscreen();
     }
   };
 
+  const progressPercent = duration > 0 ? (localTime / duration) * 100 : 0;
+
   return (
-    <div className="player-wrapper" ref={containerRef}>
-      {/* Video IFrame Container */}
+    <div className={`player-wrapper ${isTheaterMode ? 'theater-mode' : ''}`} ref={containerRef}>
+      {/* Cinema Ambient Backlight Glow */}
+      <div className="cinema-ambient-glow" />
+
+      {/* Video Viewport Container */}
       <div className="video-viewport">
         <div id="yt-player-target" className="yt-iframe-element" />
 
-        {/* Non-controllers Overlay: clicking shows request controls modal/hint */}
+        {/* Non-controllers Overlay */}
         {!canControl && (
           <div
             className="video-click-interceptor"
@@ -304,21 +335,21 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
         {showControlHint && (
           <div className="control-restriction-toast animate-fade-in">
             <Lock className="w-4 h-4 text-amber-400" />
-            <span>Playback is controlled by Host & Moderators</span>
+            <span>Host & Moderators hold playback controls</span>
             <button className="btn-request-inline" onClick={onRequestControl}>
               <Sparkles className="w-3.5 h-3.5" /> Request Control
             </button>
           </div>
         )}
 
-        {/* Sync Drift indicator */}
+        {/* Sync Drift Indicator */}
         <div className={`sync-pill ${syncStatus}`}>
           <div className="sync-dot" />
-          <span>{syncStatus === 'synced' ? 'Synchronized' : 'Calibrating...'}</span>
+          <span>{syncStatus === 'synced' ? 'Synchronized' : 'Calibrating Drift...'}</span>
         </div>
       </div>
 
-      {/* Sleek Custom Controls Bar */}
+      {/* Floating Modern Custom Controls Island */}
       <div className="player-controls-bar">
         {/* Play/Pause Button */}
         <button
@@ -333,6 +364,28 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
           )}
         </button>
 
+        {/* Quick Skip -10s and +10s (Host/Mod only) */}
+        {canControl && (
+          <div className="skip-buttons-group">
+            <button
+              className="btn-skip"
+              onClick={() => handleJump(-10)}
+              title="Rewind 10 seconds"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span className="skip-label">10s</span>
+            </button>
+            <button
+              className="btn-skip"
+              onClick={() => handleJump(10)}
+              title="Forward 10 seconds"
+            >
+              <RotateCw className="w-3.5 h-3.5" />
+              <span className="skip-label">10s</span>
+            </button>
+          </div>
+        )}
+
         {/* Time Stamp */}
         <div className="time-display">
           <span className="current-time">{formatTime(localTime)}</span>
@@ -340,7 +393,7 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
           <span className="total-time">{formatTime(duration)}</span>
         </div>
 
-        {/* Scrub Slider */}
+        {/* Scrub Slider Container with smooth progress track */}
         <div className="scrub-container">
           <input
             type="range"
@@ -354,7 +407,7 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
           />
           <div
             className="scrub-progress"
-            style={{ width: `${duration > 0 ? (localTime / duration) * 100 : 0}%` }}
+            style={{ width: `${progressPercent}%` }}
           />
         </div>
 
@@ -377,17 +430,28 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
           />
         </div>
 
-        {/* Role permission badge */}
-        <div className={`badge-role-pill role-${userRole}`}>
-          {userRole === 'host' && '👑 Host Control'}
-          {userRole === 'moderator' && '🛡️ Mod Control'}
-          {userRole === 'participant' && '👁️ Participant (View Only)'}
-        </div>
+        {/* Theater Mode Toggle */}
+        {onToggleTheater && (
+          <button
+            className={`btn-theater ${isTheaterMode ? 'btn-theater-active' : ''}`}
+            onClick={onToggleTheater}
+            title={isTheaterMode ? 'Exit Theater Mode' : 'Enter Theater Mode'}
+          >
+            <Tv className="w-4 h-4" />
+          </button>
+        )}
 
         {/* Fullscreen Button */}
         <button className="btn-fullscreen" onClick={handleFullscreen} title="Toggle Fullscreen">
           <Maximize className="w-4 h-4" />
         </button>
+
+        {/* Role permission badge */}
+        <div className={`badge-role-pill role-${userRole}`}>
+          {userRole === 'host' && '👑 Host'}
+          {userRole === 'moderator' && '🛡️ Mod'}
+          {userRole === 'participant' && '👁️ Viewer'}
+        </div>
       </div>
     </div>
   );

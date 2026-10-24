@@ -36,10 +36,11 @@ export class RoomManager {
     hostUsername: string,
     socketId: string,
     customRoomId?: string,
-    initialVideoId: string = 'dQw4w9WgXcQ'
+    initialVideoId: string = 'dQw4w9WgXcQ',
+    customHostId?: string
   ): { room: Room; host: Participant } {
     const roomId = customRoomId ? customRoomId.toUpperCase().trim() : this.generateRoomId();
-    const hostId = 'user_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
+    const hostId = customHostId || ('user_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6));
     const host = new Participant(hostId, socketId, hostUsername, 'host');
 
     const room = new Room(
@@ -104,7 +105,8 @@ export class RoomManager {
   public joinRoom(
     roomId: string,
     username: string,
-    socketId: string
+    socketId: string,
+    customUserId?: string
   ): { room: Room; participant: Participant; isNewHost: boolean } {
     const normalizedId = roomId.toUpperCase().trim();
     let room = this.getRoom(normalizedId);
@@ -116,7 +118,7 @@ export class RoomManager {
       // If room doesn't exist, this joiner becomes the creator/host!
       isNewHost = true;
       participantRole = 'host';
-      const created = this.createRoom(`${username}'s Party`, username, socketId, normalizedId);
+      const created = this.createRoom(`${username}'s Party`, username, socketId, normalizedId, 'dQw4w9WgXcQ', customUserId);
       return { room: created.room, participant: created.host, isNewHost: true };
     }
 
@@ -127,7 +129,7 @@ export class RoomManager {
       room.hostId = '';
     }
 
-    const userId = 'user_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
+    const userId = customUserId || ('user_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6));
     const participant = new Participant(userId, socketId, username, participantRole);
 
     if (isNewHost) {

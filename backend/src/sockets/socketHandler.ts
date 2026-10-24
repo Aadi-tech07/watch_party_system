@@ -9,17 +9,36 @@ export function setupSocketHandlers(io: Server): void {
 
   io.on('connection', (socket: Socket) => {
     // 1. JOIN ROOM
-    socket.on('join_room', (data: { roomId: string; username: string }) => {
-      const { roomId, username } = data;
-      if (!roomId || !username) {
-        socket.emit('error_message', { message: 'Room ID and Username are required.' });
+    socket.on('join_room', (data: { roomId: string; username?: string; token?: string }) => {
+      const { roomId, token } = data;
+      if (!roomId) {
+        socket.emit('error_message', { message: 'Room ID is required.' });
         return;
       }
 
-      const cleanUsername = username.trim().substring(0, 25);
+      // Check authentication: user MUST be authenticated to join, chat, and participate
+      let authenticatedUser: any = null;
+      if (token) {
+        authenticatedUser = db.getUserByToken(token);
+      }
+
+      if (!authenticatedUser) {
+        socket.emit('auth_required', {
+          code: 'AUTH_REQUIRED',
+          message: 'Authentication required. Please sign in or create an account to join the watch party.'
+        });
+        return;
+      }
+
+      const cleanUsername = authenticatedUser.username;
       const cleanRoomId = roomId.trim().toUpperCase();
 
-      const { room, participant } = roomManager.joinRoom(cleanRoomId, cleanUsername, socket.id);
+      const { room, participant } = roomManager.joinRoom(
+        cleanRoomId,
+        cleanUsername,
+        socket.id,
+        authenticatedUser.id
+      );
 
       socket.join(`room:${room.id}`);
 
@@ -509,3 +528,4 @@ export function setupSocketHandlers(io: Server): void {
     });
   });
 }
+

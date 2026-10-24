@@ -5,6 +5,48 @@ async function runTest() {
 
   const SERVER_URL = 'http://localhost:5001';
 
+
+  // Helper to register / login user via REST API
+  async function registerUser(username: string, password: string = 'password123') {
+    const res = await fetch(`${SERVER_URL}/api/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password })
+    });
+    if (res.ok) {
+      const data = await res.json();
+      return data.token;
+    }
+    const loginRes = await fetch(`${SERVER_URL}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password })
+    });
+    const loginData = await loginRes.json();
+    return loginData.token;
+  }
+
+  // --- Test 0: Security & Auth Enforcement ---
+  console.log('--- Testing Security: Unauthenticated Join Rejection ---');
+  const eve = io(SERVER_URL);
+  await new Promise<void>((resolve) => eve.on('connect', resolve));
+  
+  const authRequiredPromise = new Promise<{ code: string; message: string }>((resolve) => {
+    eve.on('auth_required', (data) => resolve(data));
+  });
+
+  eve.emit('join_room', { roomId: 'E2E_ROOM', username: 'Eve' }); // No token!
+  const authErr = await authRequiredPromise;
+  console.log(`✅ Unauthenticated user (Eve) blocked properly: "${authErr.message}"`);
+  eve.disconnect();
+
+  // --- Step 1: Register and Authenticate Alice & Bob ---
+  console.log('\n--- Authenticating Users ---');
+  const aliceToken = await registerUser(`Alice_${Date.now()}`);
+  const bobToken = await registerUser(`Bob_${Date.now()}`);
+  console.log('✅ Alice authenticated successfully with session token');
+  console.log('✅ Bob authenticated successfully with session token');
+
   // 1. Connect Host (Alice)
   const alice = io(SERVER_URL);
   let aliceId = '';
@@ -13,7 +55,7 @@ async function runTest() {
   await new Promise<void>((resolve) => alice.on('connect', resolve));
   console.log('✅ Alice connected to WebSocket server');
 
-  alice.emit('join_room', { roomId: 'E2E_ROOM', username: 'Alice' });
+  alice.emit('join_room', { roomId: 'E2E_ROOM', token: aliceToken });
 
   const aliceInitialState: any = await new Promise((resolve) => {
     alice.once('sync_state', (data) => {
@@ -32,7 +74,7 @@ async function runTest() {
   await new Promise<void>((resolve) => bob.on('connect', resolve));
   console.log('✅ Bob connected to WebSocket server');
 
-  bob.emit('join_room', { roomId: 'E2E_ROOM', username: 'Bob' });
+  bob.emit('join_room', { roomId: 'E2E_ROOM', token: bobToken });
 
   const bobInitialState: any = await new Promise((resolve) => {
     bob.once('sync_state', (data) => {
