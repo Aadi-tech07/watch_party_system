@@ -4,15 +4,22 @@ import { Lobby } from './components/Lobby';
 import { WatchParty } from './components/WatchParty';
 import { AuthModal } from './components/AuthModal';
 import { AuthUser } from './types';
-import { fetchCurrentUser, getStoredToken, logoutApi } from './services/auth';
+import {
+  clearAuthSession,
+  fetchCurrentUser,
+  getStoredToken,
+  getStoredUser,
+  logoutApi
+} from './services/auth';
 import './styles/index.css';
+import './styles/index-auth-additions.css';
 
 export const App: React.FC = () => {
   const [inParty, setInParty] = useState(false);
   const [currentRoomId, setCurrentRoomId] = useState<string>('');
   const [username, setUsername] = useState<string>('');
   const [urlRoomCode, setUrlRoomCode] = useState<string>('');
-  const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(getStoredUser());
   const [authToken, setAuthToken] = useState<string | null>(getStoredToken());
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [pendingJoin, setPendingJoin] = useState<{
@@ -23,34 +30,34 @@ export const App: React.FC = () => {
 
   const socket = getSocket();
 
-  // Load existing session on mount
+  // Validate the stored session on load; keep React state in sync with storage.
   useEffect(() => {
     fetchCurrentUser().then((user) => {
-      if (user) {
-        setCurrentUser(user);
-        setAuthToken(getStoredToken());
-      }
+      setCurrentUser(user);
+      setAuthToken(user ? getStoredToken() : null);
     });
   }, []);
 
-  // Check URL query parameters for direct invite link (?room=XYZ)
+  // Open the auth modal when arriving through a shared room link.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const roomParam = params.get('room');
     if (roomParam) {
-      const code = roomParam.toUpperCase();
-      setUrlRoomCode(code);
-      // If user arrives via link and is not authenticated, prompt login immediately!
+      setUrlRoomCode(roomParam.toUpperCase());
       if (!getStoredToken()) {
         setShowAuthModal(true);
       }
     }
   }, []);
 
-  // Listen for auth_required from server
+  // Server rejected our token: wipe the stale session so the user can sign in again.
   useEffect(() => {
     const handleAuthRequired = () => {
+      clearAuthSession();
+      setCurrentUser(null);
+      setAuthToken(null);
       setInParty(false);
+      setCurrentRoomId('');
       setShowAuthModal(true);
     };
 
@@ -64,29 +71,31 @@ export const App: React.FC = () => {
     roomId: string,
     joinedUsername: string,
     isCreate: boolean = false,
-    initialVideo?: string
+    initialVideo?: string,
+    overrideToken?: string,
+    overrideUser?: AuthUser
   ) => {
-    // If not authenticated, require login first!
-    if (!currentUser || !authToken) {
+    const activeToken = overrideToken || authToken || getStoredToken();
+    const activeUser = overrideUser || currentUser || getStoredUser();
+
+    if (!activeToken || !activeUser) {
       setPendingJoin({ roomId, isCreate, initialVideo });
       setShowAuthModal(true);
       return;
     }
 
     const cleanRoom = roomId.toUpperCase().trim();
-    const effectiveUsername = currentUser.username || joinedUsername.trim();
+    const effectiveUsername = activeUser.username || joinedUsername.trim();
 
     setCurrentRoomId(cleanRoom);
     setUsername(effectiveUsername);
 
-    // Emit join_room with authentication token
     socket.emit('join_room', {
       roomId: cleanRoom,
       username: effectiveUsername,
-      token: authToken
+      token: activeToken
     });
 
-    // If host chose a custom initial video on creation
     if (isCreate && initialVideo) {
       setTimeout(() => {
         socket.emit('change_video', { videoId: initialVideo });
@@ -95,7 +104,6 @@ export const App: React.FC = () => {
 
     setInParty(true);
 
-    // Update URL history without page reload
     const newUrl = `${window.location.pathname}?room=${cleanRoom}`;
     window.history.pushState({ path: newUrl }, '', newUrl);
   };
@@ -105,22 +113,12 @@ export const App: React.FC = () => {
     setAuthToken(token);
     setShowAuthModal(false);
 
-    // If there was a pending room join (or direct link)
     if (pendingJoin) {
       const { roomId, isCreate, initialVideo } = pendingJoin;
       setPendingJoin(null);
-      handleJoinParty(roomId, user.username, isCreate, initialVideo);
+      handleJoinParty(roomId, user.username, isCreate, initialVideo, token, user);
     } else if (urlRoomCode) {
-      handleJoinParty(urlRoomCode, user.username, false);
-    }
-  };
-
-  const handleLogout = async () => {
-    await logoutApi();
-    setCurrentUser(null);
-    setAuthToken(null);
-    if (inParty) {
-      handleLeaveParty();
+      handleJoinParty(urlRoomCode, user.username, false, undefined, token, user);
     }
   };
 
@@ -130,9 +128,19 @@ export const App: React.FC = () => {
     }
     setInParty(false);
     setCurrentRoomId('');
+    setUrlRoomCode('');
 
-    // Clear URL param
     window.history.pushState({}, '', window.location.pathname);
+  };
+
+  const handleLogout = async () => {
+    if (inParty) {
+      handleLeaveParty();
+    }
+    await logoutApi();
+    setCurrentUser(null);
+    setAuthToken(null);
+    setPendingJoin(null);
   };
 
   return (

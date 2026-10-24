@@ -1,7 +1,25 @@
 import { io, Socket } from 'socket.io-client';
 
-const BACKEND_URL = (import.meta as any).env?.VITE_BACKEND_URL || 
-  (window.location.port === '5173' ? 'http://localhost:5001' : window.location.origin);
+const env = (import.meta as any).env || {};
+
+/**
+ * Resolve the backend URL.
+ * 1. VITE_BACKEND_URL wins if set (.env file).
+ * 2. In dev (any Vite port, localhost / 127.0.0.1 / LAN IP) use the SAME host on port 5001,
+ *    so requests never accidentally hit the Vite dev server (which returns HTML, not JSON).
+ * 3. In production assume the backend serves the app from the same origin.
+ */
+function resolveBackendUrl(): string {
+  if (env.VITE_BACKEND_URL) {
+    return String(env.VITE_BACKEND_URL).replace(/\/+$/, '');
+  }
+  if (env.DEV) {
+    return `${window.location.protocol}//${window.location.hostname}:5001`;
+  }
+  return window.location.origin;
+}
+
+export const BACKEND_URL = resolveBackendUrl();
 
 let socketInstance: Socket | null = null;
 
@@ -23,7 +41,7 @@ export function getSocket(): Socket {
     });
 
     socketInstance.on('connect_error', (error) => {
-      console.error('❌ WebSocket connection error:', error.message);
+      console.error(`❌ WebSocket connection error (${BACKEND_URL}):`, error.message);
     });
   }
 
