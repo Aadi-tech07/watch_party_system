@@ -3,10 +3,13 @@
   "version": "1.0.0",
   "description": "Real-time YouTube Watch Party Backend with WebSockets, RBAC, and SQLite",
   "main": "dist/server.js",
+  "engines": {
+    "node": ">=22.0.0"
+  },
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
-    "start": "tsx src/server.ts",
+    "start": "node dist/server.js",
     "test": "tsx src/test-e2e.ts"
   },
   "dependencies": {
