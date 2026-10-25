@@ -124,7 +124,7 @@ export class Room {
 
     this.currentVideoId = videoId;
     this.currentTime = 0;
-    this.playState = 'paused';
+    this.playState = 'playing';
     this.lastUpdatedTime = Date.now();
     return { success: true };
   }

@@ -106,15 +106,23 @@ export class RoomManager {
     roomId: string,
     username: string,
     socketId: string,
-    customUserId?: string
+    customUserId?: string,
+    asViewer: boolean = false
   ): { room: Room; participant: Participant; isNewHost: boolean } {
     const normalizedId = roomId.toUpperCase().trim();
     let room = this.getRoom(normalizedId);
 
     let isNewHost = false;
-    let participantRole: Role = 'participant';
+    let participantRole: Role = asViewer ? 'viewer' : 'participant';
 
     if (!room) {
+      if (asViewer) {
+        const created = this.createRoom(`${username}'s Stream`, username, socketId, normalizedId, 'dQw4w9WgXcQ', customUserId);
+        const viewerParticipant = new Participant(created.host.id, socketId, username, 'viewer');
+        created.room.participants.set(viewerParticipant.id, viewerParticipant);
+        created.room.hostId = '';
+        return { room: created.room, participant: viewerParticipant, isNewHost: false };
+      }
       // If room doesn't exist, this joiner becomes the creator/host!
       isNewHost = true;
       participantRole = 'host';
@@ -123,7 +131,7 @@ export class RoomManager {
     }
 
     // If room has no active participants or host has left, could promote or keep participant
-    if (room.participants.size === 0) {
+    if (room.participants.size === 0 && !asViewer) {
       isNewHost = true;
       participantRole = 'host';
       room.hostId = '';
@@ -230,6 +238,24 @@ export class RoomManager {
     this.persistRoomState(room);
 
     return { room, participant };
+  }
+
+  public verifyAndJoinPartyChat(socketId: string, roomCode: string): { success: boolean; room?: Room; participant?: Participant; error?: string } {
+    const roomId = this.socketToRoom.get(socketId);
+    if (!roomId) return { success: false, error: 'User is not currently in a room.' };
+    const room = this.rooms.get(roomId);
+    if (!room) return { success: false, error: 'Room not found.' };
+    const participant = room.getParticipantBySocket(socketId);
+    if (!participant) return { success: false, error: 'Participant not found.' };
+
+    const cleanCode = (roomCode || '').trim().toUpperCase();
+    if (cleanCode !== room.id) {
+      return { success: false, error: 'Invalid room code. Please check and try again.' };
+    }
+
+    participant.updateRole('participant');
+    this.db.updateParticipantRole(participant.id, 'participant');
+    return { success: true, room, participant };
   }
 
   public persistRoomState(room: Room): void {

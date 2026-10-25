@@ -9,8 +9,8 @@ export function setupSocketHandlers(io: Server): void {
 
   io.on('connection', (socket: Socket) => {
     // 1. JOIN ROOM
-    socket.on('join_room', (data: { roomId: string; username?: string; token?: string }) => {
-      const { roomId, token } = data;
+    socket.on('join_room', (data: { roomId: string; username?: string; token?: string; asViewer?: boolean }) => {
+      const { roomId, token, asViewer } = data;
       if (!roomId) {
         socket.emit('error_message', { message: 'Room ID is required.' });
         return;
@@ -37,7 +37,8 @@ export function setupSocketHandlers(io: Server): void {
         cleanRoomId,
         cleanUsername,
         socket.id,
-        authenticatedUser.id
+        authenticatedUser.id,
+        Boolean(asViewer)
       );
 
       socket.join(`room:${room.id}`);
@@ -78,10 +79,53 @@ export function setupSocketHandlers(io: Server): void {
         userId: 'system',
         username: 'System',
         role: 'system' as any,
-        text: `${cleanUsername} joined the party as ${participant.role.toUpperCase()}.`,
+        text: participant.role === 'viewer'
+          ? `${cleanUsername} tuned into the stream.`
+          : `${cleanUsername} joined the party as ${participant.role.toUpperCase()}.`,
         timestamp: Date.now()
       };
       io.to(`room:${room.id}`).emit('chat_message', sysMsg);
+    });
+
+    // 1B. JOIN PARTY CHAT WITH CODE (Stream Viewer upgrades to Participant)
+    socket.on('join_party_chat', (data: { roomCode: string }) => {
+      const result = roomManager.verifyAndJoinPartyChat(socket.id, data?.roomCode);
+      if (!result.success || !result.room || !result.participant) {
+        socket.emit('error_message', { message: result.error || 'Failed to join party chat. Incorrect room code.' });
+        return;
+      }
+
+      const { room, participant } = result;
+
+      // Broadcast role assigned to all room members
+      io.to(`room:${room.id}`).emit('role_assigned', {
+        userId: participant.id,
+        username: participant.username,
+        role: participant.role,
+        participants: room.getParticipantsList()
+      });
+
+      // Notify the upgraded client with their new role
+      socket.emit('sync_state', {
+        ...room.toStatePayload(),
+        myUserId: participant.id,
+        myRole: participant.role
+      });
+
+      socket.emit('party_joined_success', {
+        message: 'Party chat unlocked! You can now participate in live chat.'
+      });
+
+      // Broadcast announcement in chat
+      io.to(`room:${room.id}`).emit('chat_message', {
+        id: 'sys_' + Date.now(),
+        roomId: room.id,
+        userId: 'system',
+        username: 'System',
+        role: 'system' as any,
+        text: `🎉 ${participant.username} entered the room code and joined the party chat!`,
+        timestamp: Date.now()
+      });
     });
 
     // 2. LEAVE ROOM
@@ -335,6 +379,13 @@ export function setupSocketHandlers(io: Server): void {
 
       const participant = room.getParticipantBySocket(socket.id);
       if (!participant) return;
+
+      if (!participant.canChat()) {
+        socket.emit('error_message', {
+          message: 'Room code required to participate in live chat. Click "Join Party / Join Chat" to unlock.'
+        });
+        return;
+      }
 
       const cleanText = (data.text || '').trim();
       if (!cleanText) return;

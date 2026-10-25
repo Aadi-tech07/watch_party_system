@@ -35,7 +35,9 @@ import {
     Database,
     Radio,
     Sliders,
-    ChevronRight
+    ChevronRight,
+    Eye,
+    KeyRound
 } from 'lucide-react';
 
 interface WatchPartyProps {
@@ -79,6 +81,8 @@ export const WatchParty: React.FC<WatchPartyProps> = ({
     const [newVideoInput, setNewVideoInput] = useState('');
     const [showStorageModal, setShowStorageModal] = useState(false);
     const [showShareModal, setShowShareModal] = useState(false);
+    const [showJoinPartyModal, setShowJoinPartyModal] = useState(false);
+    const [partyPasscodeInput, setPartyPasscodeInput] = useState('');
     const [isTheaterMode, setIsTheaterMode] = useState(false);
 
     // Quick Copy Feedback
@@ -102,6 +106,25 @@ export const WatchParty: React.FC<WatchPartyProps> = ({
             if (data.myUserId) setCurrentUserId(data.myUserId);
             if (data.myRole) setMyRole(data.myRole);
             if (data.queue) setQueue(data.queue);
+        });
+
+        socket.on('party_joined_success', (data: { message: string }) => {
+            showToast(`🎉 ${data.message}`);
+            setShowJoinPartyModal(false);
+        });
+
+        socket.on('play_event', (data: { triggeredBy: string; currentTime: number }) => {
+            setVideoState((prev) => ({ ...prev, playState: 'playing', currentTime: data.currentTime }));
+            showToast(`▶ ${data.triggeredBy} started playback`);
+        });
+
+        socket.on('pause_event', (data: { triggeredBy: string; currentTime: number }) => {
+            setVideoState((prev) => ({ ...prev, playState: 'paused', currentTime: data.currentTime }));
+            showToast(`⏸ ${data.triggeredBy} paused playback`);
+        });
+
+        socket.on('seek_event', (data: { triggeredBy: string; time: number }) => {
+            setVideoState((prev) => ({ ...prev, currentTime: data.time }));
         });
 
         socket.on('user_joined', (data: { username: string; userId: string; role: Role; participants: ParticipantInfo[] }) => {
@@ -167,6 +190,10 @@ export const WatchParty: React.FC<WatchPartyProps> = ({
 
         return () => {
             socket.off('sync_state');
+            socket.off('party_joined_success');
+            socket.off('play_event');
+            socket.off('pause_event');
+            socket.off('seek_event');
             socket.off('user_joined');
             socket.off('user_left');
             socket.off('role_assigned');
@@ -188,6 +215,13 @@ export const WatchParty: React.FC<WatchPartyProps> = ({
         setTimeout(() => {
             setStatusNotification(null);
         }, 4000);
+    };
+
+    const handleJoinPartyChat = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!partyPasscodeInput.trim()) return;
+        socket.emit('join_party_chat', { roomCode: partyPasscodeInput.trim().toUpperCase() });
+        setPartyPasscodeInput('');
     };
 
     // Playback Action Emitters
@@ -324,11 +358,24 @@ export const WatchParty: React.FC<WatchPartyProps> = ({
                         {myRole === 'host' && <Crown className="w-3.5 h-3.5 text-amber-300 mr-1.5" />}
                         {myRole === 'moderator' && <Shield className="w-3.5 h-3.5 text-cyan-300 mr-1.5" />}
                         {myRole === 'participant' && <User className="w-3.5 h-3.5 text-slate-400 mr-1.5" />}
-                        <span className="role-text">{myRole.toUpperCase()}</span>
+                        {myRole === 'viewer' && <Eye className="w-3.5 h-3.5 text-cyan-400 mr-1.5" />}
+                        <span className="role-text">{myRole === 'viewer' ? 'STREAM VIEWER' : myRole.toUpperCase()}</span>
                     </div>
 
+                    {/* Join Party button if Viewer */}
+                    {myRole === 'viewer' && (
+                        <button
+                            className="btn-join-party-topbar"
+                            onClick={() => setShowJoinPartyModal(true)}
+                            title="Enter room code to join party chat"
+                        >
+                            <KeyRound className="w-3.5 h-3.5 mr-1 text-amber-300" />
+                            <span>Join Party / Chat</span>
+                        </button>
+                    )}
+
                     {/* Request Control button if participant */}
-                    {!canControl && (
+                    {!canControl && myRole !== 'viewer' && (
                         <button className="btn-request-control" onClick={handleRequestControl}>
                             <Sparkles className="w-3.5 h-3.5 mr-1.5" /> Request Control
                         </button>
@@ -467,6 +514,8 @@ export const WatchParty: React.FC<WatchPartyProps> = ({
                                 currentUserId={currentUserId}
                                 onSendMessage={handleSendMessage}
                                 onSendReaction={handleSendReaction}
+                                isViewer={myRole === 'viewer'}
+                                onOpenJoinPartyModal={() => setShowJoinPartyModal(true)}
                             />
                         )}
 
@@ -494,6 +543,59 @@ export const WatchParty: React.FC<WatchPartyProps> = ({
                     </div>
                 </aside>
             </div>
+
+            {/* Modal: Join Party with Room Code (Unlocks Chat for Viewers) */}
+            {showJoinPartyModal && (
+                <div className="modal-backdrop animate-fade-in" onClick={() => setShowJoinPartyModal(false)}>
+                    <div className="modal-card glass-panel" onClick={(e) => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <div className="flex items-center gap-2">
+                                <KeyRound className="w-5 h-5 text-amber-400" />
+                                <h3 className="modal-title">Join Party & Unlock Chat</h3>
+                            </div>
+                            <button className="modal-close" onClick={() => setShowJoinPartyModal(false)}>
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
+                        <form onSubmit={handleJoinPartyChat} className="modal-form">
+                            <div className="form-group">
+                                <label className="form-label">Enter Party Room Code</label>
+                                <input
+                                    type="text"
+                                    required
+                                    maxLength={20}
+                                    placeholder="e.g. PARTY-9821"
+                                    value={partyPasscodeInput}
+                                    onChange={(e) => setPartyPasscodeInput(e.target.value.toUpperCase())}
+                                    className="input-text uppercase-input"
+                                    autoFocus
+                                />
+                                <span className="input-hint">
+                                    Enter the room code shared by the host to participate in chat and reactions.
+                                </span>
+                            </div>
+
+                            <div className="modal-actions">
+                                <button
+                                    type="button"
+                                    className="btn-modal-cancel"
+                                    onClick={() => setShowJoinPartyModal(false)}
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={!partyPasscodeInput.trim()}
+                                    className="btn-modal-confirm"
+                                    style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)' }}
+                                >
+                                    Unlock Live Chat
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
 
             {/* Modal: Change Video for Host & Moderator */}
             {showVideoInputModal && (

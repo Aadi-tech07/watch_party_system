@@ -84,7 +84,7 @@ app.post('/api/auth/logout', (req, res) => {
 
 // Rooms & Storage Endpoints
 app.get('/api/rooms', (req, res) => {
-  const rooms = db.getAllRooms();
+  const rooms = db.getActiveRooms();
   res.json({ rooms });
 });
 

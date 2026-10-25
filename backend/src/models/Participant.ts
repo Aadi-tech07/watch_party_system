@@ -39,6 +39,10 @@ export class Participant {
     return this.role === 'host';
   }
 
+  public canChat(): boolean {
+    return this.role !== 'viewer';
+  }
+
   public updateRole(newRole: Role): void {
     this.role = newRole;
   }

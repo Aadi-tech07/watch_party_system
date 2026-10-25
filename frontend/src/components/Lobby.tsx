@@ -4,60 +4,36 @@ import {
     Users,
     Shield,
     Sparkles,
-    Tv,
     ArrowRight,
     Radio,
-    Film,
-    Music,
-    CheckCircle2,
     Database,
     Shuffle,
-    Eye,
     Info,
-    Clock,
-    ExternalLink,
     Lock,
-    LogIn,
-    UserCheck
+    Eye,
+    KeyRound
 } from 'lucide-react';
 import { extractYouTubeId } from '../utils/youtube';
 import { StorageModal } from './StorageModal';
 import { AuthUser } from '../types';
 
 interface LobbyProps {
-    onJoinRoom: (roomId: string, username: string, isCreate?: boolean, initialVideo?: string) => void;
+    onJoinRoom: (
+        roomId: string,
+        username: string,
+        isCreate?: boolean,
+        initialVideo?: string,
+        overrideToken?: string,
+        overrideUser?: AuthUser,
+        asViewer?: boolean
+    ) => void;
     initialRoomCode?: string;
     currentUser: AuthUser | null;
     onOpenAuth: () => void;
     onLogout: () => void;
 }
 
-const PRESET_VIDEOS = [
-    {
-        title: 'Lofi Hip Hop Radio — Beats to Relax/Study to',
-        id: 'jfKfPfyJRdk',
-        tag: 'Lofi',
-        channel: 'Lofi Girl'
-    },
-    {
-        title: 'Blender Open Movie — Big Buck Bunny 4K 60FPS',
-        id: 'aqz-KE-bpKQ',
-        tag: 'Animation',
-        channel: 'Blender Foundation'
-    },
-    {
-        title: 'Synthwave Radio — Chill Beats & Retrowave',
-        id: '4xDzrJKXOOY',
-        tag: 'Synthwave',
-        channel: 'Lofi Girl'
-    },
-    {
-        title: 'Relaxing 4K Nature & Ocean Drone Tour',
-        id: 'LXb3EKWsInQ',
-        tag: 'Nature',
-        channel: 'Relaxation Channel'
-    }
-];
+const DEFAULT_VIDEO_ID = 'jfKfPfyJRdk';
 
 export const Lobby: React.FC<LobbyProps> = ({
     onJoinRoom,
@@ -66,17 +42,21 @@ export const Lobby: React.FC<LobbyProps> = ({
     onOpenAuth,
     onLogout
 }) => {
-    const [activeTab, setActiveTab] = useState<'create' | 'join'>(initialRoomCode ? 'join' : 'create');
+    const [activeTab, setActiveTab] = useState<'create' | 'join' | 'watch'>(initialRoomCode ? 'join' : 'create');
 
     // Create Room state
     const [hostName, setHostName] = useState(currentUser?.username || '');
     const [roomName, setRoomName] = useState('');
-    const [videoInput, setVideoInput] = useState(PRESET_VIDEOS[0].id);
+    const [videoInput, setVideoInput] = useState(DEFAULT_VIDEO_ID);
     const [generatedCode, setGeneratedCode] = useState(() => 'PARTY-' + Math.random().toString(36).substring(2, 6).toUpperCase());
 
-    // Join Room state
+    // Join Room state (Party participant with room code)
     const [joinRoomCode, setJoinRoomCode] = useState(initialRoomCode || '');
     const [joinUsername, setJoinUsername] = useState(currentUser?.username || '');
+
+    // Watch Stream state (Viewer mode)
+    const [watchRoomCode, setWatchRoomCode] = useState(initialRoomCode || '');
+    const [watchUsername, setWatchUsername] = useState(currentUser?.username || '');
 
     // Active rooms from backend API
     const [recentRooms, setRecentRooms] = useState<any[]>([]);
@@ -85,13 +65,14 @@ export const Lobby: React.FC<LobbyProps> = ({
     // Storage Modal state
     const [showStorageModal, setShowStorageModal] = useState(false);
 
-    const currentPreviewId = extractYouTubeId(videoInput) || PRESET_VIDEOS[0].id;
+    const currentPreviewId = extractYouTubeId(videoInput) || DEFAULT_VIDEO_ID;
 
     // Sync username if currentUser changes
     useEffect(() => {
         if (currentUser) {
             setHostName(currentUser.username);
             setJoinUsername(currentUser.username);
+            setWatchUsername(currentUser.username);
         }
     }, [currentUser]);
 
@@ -112,6 +93,8 @@ export const Lobby: React.FC<LobbyProps> = ({
         };
 
         fetchRooms();
+        const poll = setInterval(fetchRooms, 6000);
+        return () => clearInterval(poll);
     }, []);
 
     const randomizeCode = () => {
@@ -124,8 +107,8 @@ export const Lobby: React.FC<LobbyProps> = ({
             onOpenAuth();
             return;
         }
-        const cleanVideoId = extractYouTubeId(videoInput) || PRESET_VIDEOS[0].id;
-        onJoinRoom(generatedCode, currentUser.username, true, cleanVideoId);
+        const cleanVideoId = extractYouTubeId(videoInput) || DEFAULT_VIDEO_ID;
+        onJoinRoom(generatedCode, currentUser.username, true, cleanVideoId, undefined, undefined, false);
     };
 
     const handleJoin = (e: React.FormEvent) => {
@@ -135,8 +118,27 @@ export const Lobby: React.FC<LobbyProps> = ({
             return;
         }
         if (!joinRoomCode.trim()) return;
-        onJoinRoom(joinRoomCode.trim().toUpperCase(), currentUser.username, false);
+        onJoinRoom(joinRoomCode.trim().toUpperCase(), currentUser.username, false, undefined, undefined, undefined, false);
     };
+
+    const handleWatchStream = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!currentUser) {
+            onOpenAuth();
+            return;
+        }
+        if (!watchRoomCode.trim()) return;
+        // User joins directly as viewer without needing chat code upfront
+        onJoinRoom(watchRoomCode.trim().toUpperCase(), currentUser.username, false, undefined, undefined, undefined, true);
+    };
+
+    // Filter to ONLY display actively running rooms
+    const activeRooms = recentRooms.filter((r) => {
+        if (r.participant_count !== undefined) {
+            return Number(r.participant_count) > 0;
+        }
+        return true;
+    });
 
     return (
         <div className="lobby-container">
@@ -234,7 +236,7 @@ export const Lobby: React.FC<LobbyProps> = ({
                     Watch YouTube in <span className="gradient-text">Perfect Sync</span> With Anyone.
                 </h1>
                 <p className="hero-subtitle">
-                    Sub-second playback synchronization, host role-based access control, live interactive chat, floating reactions, and persistent playlist queue.
+                    Sub-second playback synchronization, role-based access control, live interactive chat, and stream viewer mode.
                 </p>
             </header>
 
@@ -246,13 +248,19 @@ export const Lobby: React.FC<LobbyProps> = ({
                         className={`tab-btn ${activeTab === 'create' ? 'active' : ''}`}
                         onClick={() => setActiveTab('create')}
                     >
-                        <Sparkles className="w-4 h-4 mr-2" /> Create Room
+                        <Sparkles className="w-4 h-4 mr-1.5" /> Create Room
                     </button>
                     <button
                         className={`tab-btn ${activeTab === 'join' ? 'active' : ''}`}
                         onClick={() => setActiveTab('join')}
                     >
-                        <Users className="w-4 h-4 mr-2" /> Join With Code
+                        <Users className="w-4 h-4 mr-1.5" /> Join Party
+                    </button>
+                    <button
+                        className={`tab-btn ${activeTab === 'watch' ? 'active' : ''}`}
+                        onClick={() => setActiveTab('watch')}
+                    >
+                        <Eye className="w-4 h-4 mr-1.5 text-cyan-400" /> Watch Stream
                     </button>
                 </div>
 
@@ -280,7 +288,7 @@ export const Lobby: React.FC<LobbyProps> = ({
                                 <input
                                     type="text"
                                     maxLength={35}
-                                    placeholder="e.g. Weekend Anime & Chill"
+                                    placeholder="e.g. Anime Watch Party"
                                     value={roomName}
                                     onChange={(e) => setRoomName(e.target.value)}
                                     className="input-text"
@@ -303,16 +311,16 @@ export const Lobby: React.FC<LobbyProps> = ({
                             </div>
                             <div className="room-code-preview-box">
                                 <span className="code-text">{generatedCode}</span>
-                                <span className="text-xs text-slate-400">Share this with friends after creating</span>
+                                <span className="text-xs text-slate-400">Share this code with friends to join chat</span>
                             </div>
                         </div>
 
                         {/* Initial Video Input & Live Preview */}
                         <div className="form-group">
-                            <label className="form-label">Initial YouTube Video URL or ID</label>
+                            <label className="form-label">YouTube Video URL or ID</label>
                             <input
                                 type="text"
-                                placeholder="https://www.youtube.com/watch?v=... or 11-char ID"
+                                placeholder="Paste any YouTube video link: https://www.youtube.com/watch?v=..."
                                 value={videoInput}
                                 onChange={(e) => setVideoInput(e.target.value)}
                                 className="input-text"
@@ -341,24 +349,6 @@ export const Lobby: React.FC<LobbyProps> = ({
                                     </div>
                                 </div>
                             )}
-
-                            {/* Preset Quick Picks */}
-                            <div className="preset-container">
-                                <span className="preset-label">Or choose a trending preset:</span>
-                                <div className="preset-chips">
-                                    {PRESET_VIDEOS.map((vid) => (
-                                        <button
-                                            key={vid.id}
-                                            type="button"
-                                            onClick={() => setVideoInput(vid.id)}
-                                            className={`preset-chip ${currentPreviewId === vid.id ? 'preset-active' : ''}`}
-                                        >
-                                            <span className="chip-tag">{vid.tag}</span>
-                                            <span className="chip-title">{vid.title}</span>
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
                         </div>
 
                         <button type="submit" disabled={!hostName.trim()} className="btn-primary-action">
@@ -368,11 +358,14 @@ export const Lobby: React.FC<LobbyProps> = ({
                     </form>
                 )}
 
-                {/* Tab 2: Join Room */}
+                {/* Tab 2: Join Party (With Code -> Full Chat) */}
                 {activeTab === 'join' && (
                     <form onSubmit={handleJoin} className="lobby-form animate-fade-in">
                         <div className="form-group">
-                            <label className="form-label">Party Room Code</label>
+                            <label className="form-label flex items-center justify-between">
+                                <span>Party Room Code</span>
+                                <span className="text-xs text-amber-400">Unlocks Full Chat & Participation</span>
+                            </label>
                             <input
                                 type="text"
                                 required
@@ -383,7 +376,7 @@ export const Lobby: React.FC<LobbyProps> = ({
                                 className="input-text uppercase-input"
                                 autoFocus
                             />
-                            <span className="input-hint">Ask the host for their 6-character room code or join link.</span>
+                            <span className="input-hint">Enter the 6-character party room code given by the host.</span>
                         </div>
 
                         <div className="form-group">
@@ -404,24 +397,73 @@ export const Lobby: React.FC<LobbyProps> = ({
                             disabled={!joinRoomCode.trim() || !joinUsername.trim()}
                             className="btn-primary-action"
                         >
-                            <span>Enter Watch Party</span>
+                            <span>Enter Watch Party (With Chat)</span>
                             <ArrowRight className="w-5 h-5 ml-2" />
+                        </button>
+                    </form>
+                )}
+
+                {/* Tab 3: Watch Stream (Public Viewer Mode) */}
+                {activeTab === 'watch' && (
+                    <form onSubmit={handleWatchStream} className="lobby-form animate-fade-in">
+                        <div className="form-group">
+                            <label className="form-label flex items-center justify-between">
+                                <span>Room Code or Stream ID</span>
+                                <span className="text-xs text-cyan-400">Stream Viewer Mode</span>
+                            </label>
+                            <input
+                                type="text"
+                                required
+                                maxLength={25}
+                                placeholder="Enter Room Code (e.g. PARTY-9821)"
+                                value={watchRoomCode}
+                                onChange={(e) => setWatchRoomCode(e.target.value.toUpperCase())}
+                                className="input-text uppercase-input"
+                                autoFocus
+                            />
+                            <span className="input-hint">Watch the livestream in real-time. Chat can be unlocked anytime with the room code.</span>
+                        </div>
+
+                        <div className="form-group">
+                            <label className="form-label">Your Nickname</label>
+                            <input
+                                type="text"
+                                required
+                                maxLength={20}
+                                placeholder="e.g. Viewer"
+                                value={watchUsername}
+                                onChange={(e) => setWatchUsername(e.target.value)}
+                                className="input-text"
+                            />
+                        </div>
+
+                        <button
+                            type="submit"
+                            disabled={!watchRoomCode.trim() || !watchUsername.trim()}
+                            className="btn-primary-action"
+                            style={{ background: 'linear-gradient(135deg, #06b6d4, #6366f1)' }}
+                        >
+                            <span>Tune In & Watch Stream</span>
+                            <Eye className="w-5 h-5 ml-2" />
                         </button>
                     </form>
                 )}
             </div>
 
-            {/* Recent / Public Persisted Rooms from SQLite */}
-            {recentRooms.length > 0 && (
+            {/* Currently Active Live Streams (Only actively running rooms) */}
+            {activeRooms.length > 0 && (
                 <section className="recent-rooms-section">
                     <div className="recent-header-row">
                         <div>
                             <h2 className="recent-title flex items-center gap-2">
-                                <Database className="w-4 h-4 text-purple-400" />
-                                <span>Active & Persisted Rooms in SQLite</span>
+                                <span className="pulse-indicator" style={{ background: '#22c55e' }} />
+                                <span>Currently Active Rooms</span>
+                                <span className="text-xs bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full font-semibold">
+                                    LIVE NOW ({activeRooms.length})
+                                </span>
                             </h2>
                             <p className="recent-subtitle">
-                                These rooms are persisted in <code className="text-purple-300">watchparty.sqlite</code>. Click any room to join instantly.
+                                These rooms are actively streaming with connected participants right now.
                             </p>
                         </div>
                         <button
@@ -433,14 +475,10 @@ export const Lobby: React.FC<LobbyProps> = ({
                     </div>
 
                     <div className="rooms-grid">
-                        {recentRooms.slice(0, 4).map((r) => (
+                        {activeRooms.slice(0, 4).map((r) => (
                             <div
                                 key={r.id}
                                 className="room-card glass-panel"
-                                onClick={() => {
-                                    setJoinRoomCode(r.id);
-                                    setActiveTab('join');
-                                }}
                             >
                                 <div className="room-card-thumb">
                                     <img
@@ -455,16 +493,43 @@ export const Lobby: React.FC<LobbyProps> = ({
                                         <span className="state-dot" />
                                         <span>{r.play_state.toUpperCase()}</span>
                                     </div>
+                                    <div className="room-viewers-count-badge">
+                                        <Users className="w-3 h-3 mr-1" />
+                                        <span>{r.participant_count || 1} online</span>
+                                    </div>
                                 </div>
 
                                 <div className="room-card-content">
                                     <div className="room-card-header">
-                                        <span className="room-id-tag">{r.id}</span>
+                                        <span className="room-id-tag">CODE: {r.id}</span>
                                     </div>
                                     <h3 className="room-card-name">{r.name || 'Watch Party'}</h3>
-                                    <div className="room-card-footer">
-                                        <span className="text-xs text-slate-400">Video: {r.current_video_id}</span>
-                                        <span className="room-join-hint">Join Party →</span>
+                                    <div className="room-card-actions-row">
+                                        <button
+                                            type="button"
+                                            className="btn-room-watch"
+                                            onClick={() => {
+                                                if (!currentUser) {
+                                                    onOpenAuth();
+                                                    return;
+                                                }
+                                                onJoinRoom(r.id, currentUser.username, false, undefined, undefined, undefined, true);
+                                            }}
+                                            title="Watch stream in viewer mode"
+                                        >
+                                            <Eye className="w-3.5 h-3.5 mr-1" /> Watch Stream
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className="btn-room-join"
+                                            onClick={() => {
+                                                setJoinRoomCode(r.id);
+                                                setActiveTab('join');
+                                            }}
+                                            title="Join party with full chat"
+                                        >
+                                            <KeyRound className="w-3.5 h-3.5 mr-1" /> Join Party
+                                        </button>
                                     </div>
                                 </div>
                             </div>
@@ -491,7 +556,7 @@ export const Lobby: React.FC<LobbyProps> = ({
                     </div>
                     <h3 className="feature-title">Role-Based Access</h3>
                     <p className="feature-desc">
-                        Host has full control over playback. Viewers can request permission, and hosts can promote trusted users to Moderator, transfer host, or manage the room.
+                        Host controls playback. Party members can chat and react. Viewers can watch the stream and enter the party code to unlock chat.
                     </p>
                 </div>
 
@@ -504,7 +569,7 @@ export const Lobby: React.FC<LobbyProps> = ({
                         <span className="text-xs text-purple-400 underline">Inspect Data →</span>
                     </div>
                     <p className="feature-desc">
-                        Room state, chat history, and upcoming playlist queues are saved on-disk to <code>watchparty.sqlite</code> for complete resilience across reconnects.
+                        Room state, chat history, and playlist queues are saved on-disk to <code>watchparty.sqlite</code> for complete resilience across reconnects.
                     </p>
                 </div>
             </section>

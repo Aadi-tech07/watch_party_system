@@ -85,6 +85,9 @@ export class DatabaseService {
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       );
     `);
+
+    // Reset active participants on server boot since no sockets are connected initially
+    this.db.exec(`UPDATE participants SET is_active = 0;`);
   }
 
   // Room queries
@@ -128,6 +131,16 @@ export class DatabaseService {
 
   public getAllRooms(): any[] {
     const stmt = this.db.prepare(`SELECT * FROM rooms ORDER BY updated_at DESC LIMIT 20`);
+    return stmt.all() as any[];
+  }
+
+  public getActiveRooms(): any[] {
+    const stmt = this.db.prepare(`
+      SELECT r.*, COUNT(p.id) as participant_count FROM rooms r
+      INNER JOIN participants p ON p.room_id = r.id AND p.is_active = 1
+      GROUP BY r.id
+      ORDER BY r.updated_at DESC LIMIT 20
+    `);
     return stmt.all() as any[];
   }
 

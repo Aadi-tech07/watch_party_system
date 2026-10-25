@@ -117,12 +117,25 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
               event.target.seekTo(currentTime, true);
             }
             if (playState === 'playing') {
-              event.target.playVideo();
+              try {
+                event.target.playVideo();
+              } catch (e) {
+                // If browser blocks audio autoplay, mute first to guarantee sync
+                event.target.mute();
+                setIsMuted(true);
+                event.target.playVideo();
+              }
             } else {
               event.target.pauseVideo();
             }
           },
           onStateChange: (event: any) => {
+            if (event.data === window.YT.PlayerState.CUED && playState === 'playing') {
+              try {
+                event.target.playVideo();
+              } catch (e) {}
+            }
+
             if (isSyncingRef.current) return;
 
             if (canControl) {
@@ -164,9 +177,21 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
           startSeconds: currentTime || 0
         });
         if (playState === 'playing') {
-          playerRef.current.playVideo();
+          setTimeout(() => {
+            try {
+              playerRef.current?.playVideo();
+            } catch (e) {
+              playerRef.current?.mute();
+              setIsMuted(true);
+              playerRef.current?.playVideo();
+            }
+          }, 200);
         } else {
-          playerRef.current.pauseVideo();
+          setTimeout(() => {
+            try {
+              playerRef.current?.pauseVideo();
+            } catch (e) {}
+          }, 200);
         }
         setTimeout(() => {
           isSyncingRef.current = false;
@@ -198,7 +223,13 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
       const ytState = playerRef.current.getPlayerState();
       if (playState === 'playing') {
         if (ytState !== window.YT.PlayerState.PLAYING) {
-          playerRef.current.playVideo();
+          try {
+            playerRef.current.playVideo();
+          } catch (e) {
+            playerRef.current.mute();
+            setIsMuted(true);
+            playerRef.current.playVideo();
+          }
         }
       } else {
         if (ytState !== window.YT.PlayerState.PAUSED) {
@@ -450,7 +481,8 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
         <div className={`badge-role-pill role-${userRole}`}>
           {userRole === 'host' && '👑 Host'}
           {userRole === 'moderator' && '🛡️ Mod'}
-          {userRole === 'participant' && '👁️ Viewer'}
+          {userRole === 'participant' && '👥 Member'}
+          {userRole === 'viewer' && '👁️ Stream Viewer'}
         </div>
       </div>
     </div>

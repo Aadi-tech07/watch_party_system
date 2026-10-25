@@ -26,6 +26,7 @@ export const App: React.FC = () => {
     roomId: string;
     isCreate: boolean;
     initialVideo?: string;
+    asViewer?: boolean;
   } | null>(null);
 
   const socket = getSocket();
@@ -73,13 +74,14 @@ export const App: React.FC = () => {
     isCreate: boolean = false,
     initialVideo?: string,
     overrideToken?: string,
-    overrideUser?: AuthUser
+    overrideUser?: AuthUser,
+    asViewer: boolean = false
   ) => {
     const activeToken = overrideToken || authToken || getStoredToken();
     const activeUser = overrideUser || currentUser || getStoredUser();
 
     if (!activeToken || !activeUser) {
-      setPendingJoin({ roomId, isCreate, initialVideo });
+      setPendingJoin({ roomId, isCreate, initialVideo, asViewer });
       setShowAuthModal(true);
       return;
     }
@@ -93,7 +95,8 @@ export const App: React.FC = () => {
     socket.emit('join_room', {
       roomId: cleanRoom,
       username: effectiveUsername,
-      token: activeToken
+      token: activeToken,
+      asViewer
     });
 
     if (isCreate && initialVideo) {
@@ -114,11 +117,11 @@ export const App: React.FC = () => {
     setShowAuthModal(false);
 
     if (pendingJoin) {
-      const { roomId, isCreate, initialVideo } = pendingJoin;
+      const { roomId, isCreate, initialVideo, asViewer } = pendingJoin;
       setPendingJoin(null);
-      handleJoinParty(roomId, user.username, isCreate, initialVideo, token, user);
+      handleJoinParty(roomId, user.username, isCreate, initialVideo, token, user, asViewer);
     } else if (urlRoomCode) {
-      handleJoinParty(urlRoomCode, user.username, false, undefined, token, user);
+      handleJoinParty(urlRoomCode, user.username, false, undefined, token, user, false);
     }
   };
 

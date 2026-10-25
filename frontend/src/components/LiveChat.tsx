@@ -1,12 +1,14 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { ChatMessage, Role } from '../types';
-import { Send, Smile, Sparkles, Crown, Shield, User, Volume2, VolumeX, MessageSquare } from 'lucide-react';
+import { Send, Smile, Sparkles, Crown, Shield, User, Volume2, VolumeX, MessageSquare, Lock, KeyRound } from 'lucide-react';
 
 interface LiveChatProps {
   messages: ChatMessage[];
   currentUserId: string;
   onSendMessage: (text: string) => void;
   onSendReaction: (emoji: string) => void;
+  isViewer?: boolean;
+  onOpenJoinPartyModal?: () => void;
 }
 
 const QUICK_EMOJIS = ['🔥', '❤️', '😂', '🎉', '👏', '🍿', '🚀', '😍'];
@@ -32,11 +34,13 @@ export const LiveChat: React.FC<LiveChatProps> = ({
   messages,
   currentUserId,
   onSendMessage,
-  onSendReaction
+  onSendReaction,
+  isViewer = false,
+  onOpenJoinPartyModal
 }) => {
   const [inputText, setInputText] = useState('');
   const [soundEnabled, setSoundEnabled] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const streamRef = useRef<HTMLDivElement>(null);
   const prevCountRef = useRef(messages.length);
 
   // Play subtle web audio chime on new message
@@ -60,8 +64,11 @@ export const LiveChat: React.FC<LiveChatProps> = ({
     }
   };
 
+  // Scroll strictly within chat-messages-stream without moving whole page
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (streamRef.current) {
+      streamRef.current.scrollTop = streamRef.current.scrollHeight;
+    }
   };
 
   useEffect(() => {
@@ -77,6 +84,10 @@ export const LiveChat: React.FC<LiveChatProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (isViewer) {
+      onOpenJoinPartyModal?.();
+      return;
+    }
     const trimmed = inputText.trim();
     if (!trimmed) return;
     onSendMessage(trimmed);
@@ -109,8 +120,8 @@ export const LiveChat: React.FC<LiveChatProps> = ({
         </button>
       </div>
 
-      {/* Messages Stream */}
-      <div className="chat-messages-stream">
+      {/* Messages Stream (strictly contained scroll) */}
+      <div className="chat-messages-stream" ref={streamRef}>
         {messages.length === 0 ? (
           <div className="chat-empty-state">
             <div className="empty-icon-circle">
@@ -161,6 +172,11 @@ export const LiveChat: React.FC<LiveChatProps> = ({
                         <Shield className="w-2.5 h-2.5 mr-0.5 text-cyan-300" /> Mod
                       </span>
                     )}
+                    {msg.role === 'viewer' && (
+                      <span className="chat-role-chip" style={{ background: 'rgba(6, 182, 212, 0.15)', color: '#38bdf8' }}>
+                        Viewer
+                      </span>
+                    )}
                     <span className="bubble-time">{formatMsgTime(msg.timestamp)}</span>
                   </div>
                   <div className="bubble-body">{msg.text}</div>
@@ -169,7 +185,6 @@ export const LiveChat: React.FC<LiveChatProps> = ({
             );
           })
         )}
-        <div ref={messagesEndRef} />
       </div>
 
       {/* Quick Reaction Bar */}
@@ -186,25 +201,45 @@ export const LiveChat: React.FC<LiveChatProps> = ({
         ))}
       </div>
 
-      {/* Input Field Form */}
-      <form onSubmit={handleSubmit} className="chat-input-form">
-        <input
-          type="text"
-          value={inputText}
-          onChange={(e) => setInputText(e.target.value)}
-          placeholder="Send a message in real-time..."
-          maxLength={300}
-          className="chat-input-field"
-        />
-        <button
-          type="submit"
-          disabled={!inputText.trim()}
-          className="btn-chat-send"
-          title="Send message"
-        >
-          <Send className="w-4 h-4" />
-        </button>
-      </form>
+      {/* Input Field Form or Locked State for Stream Viewers */}
+      {isViewer ? (
+        <div className="viewer-chat-locked-box animate-fade-in">
+          <div className="locked-banner-text">
+            <Lock className="w-4 h-4 text-amber-400 mr-1.5 flex-shrink-0" />
+            <span>Chat is locked for viewers</span>
+          </div>
+          <p className="locked-desc">
+            Enter the party room code to unlock real-time live chat.
+          </p>
+          <button
+            type="button"
+            className="btn-unlock-chat-action"
+            onClick={onOpenJoinPartyModal}
+          >
+            <KeyRound className="w-4 h-4 mr-1.5" />
+            <span>Join Party / Unlock Chat</span>
+          </button>
+        </div>
+      ) : (
+        <form onSubmit={handleSubmit} className="chat-input-form">
+          <input
+            type="text"
+            value={inputText}
+            onChange={(e) => setInputText(e.target.value)}
+            placeholder="Send a message in real-time..."
+            maxLength={300}
+            className="chat-input-field"
+          />
+          <button
+            type="submit"
+            disabled={!inputText.trim()}
+            className="btn-chat-send"
+            title="Send message"
+          >
+            <Send className="w-4 h-4" />
+          </button>
+        </form>
+      )}
     </div>
   );
 };
